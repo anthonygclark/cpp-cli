@@ -11,6 +11,7 @@ from config import Config
 from config import ConfigException
 
 VER = 0.01
+WPATH = os.path.realpath(sys.argv[0])
 ANSI_BASE = '\001\033[%sm\002'
 
 ABOUT="""\
@@ -58,35 +59,38 @@ class Compiler(object):
 		self.warnings = self.config.get_option('warnings')
 		self.command = self.config.get_option('command')
 		self.includes = self.config.get_option('includes', Config.CONFIG_CSV)
-		self.includes = ["#include <%s>" % i for i in self.includes]
+		self.includes = ["#include <%s>" % i.strip() for i in self.includes]
 		self.output_name = self.config.get_option('output')
 		self.output_bin = self.config.get_option('binary')
 
 	def assemble_command(self):
 		return self.command
 
-	def write_file(self, _g, _f, _l):
-		with open(self.output_name, 'w+') as out:
+	def write_contents(self, stream, _g, _f, _l):
 			_gl = []
 			_fl = []
 
 			for g in _g:
 				for l in g.lines:
 					_gl.append(l)
-			
+
 			for f in _f:
 				for l in f.lines:
 					_fl.append(l)
 
-			out.write(HEADER.format(
-					 includes='\n'.join(self.includes),
-					 prototypes='\n'.join([fn.create_prototype() for fn in _f]),
-					 _globals='\n'.join(_gl),
-					 functions='\n'.join(_fl)))
+			stream.write(HEADER.format(
+				includes='\n'.join(self.includes),
+				prototypes='\n'.join([fn.create_prototype() for fn in _f]),
+				_globals='\n'.join(_gl),
+				functions='\n'.join(_fl)))
 
-			out.write(MAIN_HEADER)
-			out.write('\n'.join(_l))
-			out.write(MAIN_FOOTER)
+			stream.write(MAIN_HEADER)
+			stream.write('\n'.join(_l))
+			stream.write(MAIN_FOOTER)
+
+	def write_file(self, _g, _f, _l):
+		with open(self.output_name, 'w+') as out:
+			self.write_contents(out, _g, _f, _l)
 
 	def compile(self):
 		_r = subprocess.call([str(tok) for tok in self.assemble_command().split(' ')])
@@ -136,8 +140,8 @@ class Features(object):
 
 class Editor(object):
 	_section = 'editor'
-	token = 'e'
-	color = 0
+	ps1color = 0
+	ps2color = 0
 
 	color_map = {
 			'black'			:'0;30',
@@ -170,6 +174,7 @@ class Editor(object):
 		self.ps1 = self.config.get_option('PS1')
 		self.ps2 = self.config.get_option('PS2')
 		self.regcol  = self.color_map.get(str(self.config.get_option('reg_color')))
+		self.contcol = self.color_map.get(str(self.config.get_option('cont_color')))
 		self.fncol  = self.color_map.get(str(self.config.get_option('fn_color')))
 		self.glcol  = self.color_map.get(str(self.config.get_option('gl_color')))
 
@@ -177,7 +182,8 @@ class Editor(object):
 		if self.ext[0] == '$':
 			self.ext = os.environ.get(self.ext[1:], 'nano')
 
-		Editor.color = self.regcol
+		Editor.ps1color = self.regcol
+		Editor.ps2color = self.contcol
 		Function.color = self.fncol
 		Global.color = self.glcol
 
@@ -186,9 +192,14 @@ class Editor(object):
 
 	def loop(self, opt=0):
 		read = 1
+		ps1 = colorize(Editor.ps1color, ('%-5s' % self.ps1))
+		ps2 = colorize(Editor.ps2color, ('%-5s' % self.ps2))
 
 		while read and not opt:
-			read = raw_input(colorize(Editor.color, ('%-5s' % self.ps1)))
+			read = raw_input(ps1)
+			
+			if not read:
+				break
 			
 			if read == Function.token:
 				function_ctx = Function(self.ps2)
@@ -201,19 +212,20 @@ class Editor(object):
 				global_ctx.loop()
 				self.globs.append(global_ctx)
 				continue;
-
-			#if read == 's':
-			#	zz = 1;
-			#	while zz:
-			#		 = raw_input(colorize(color_map['green'], '(stdin)<< '))
-				
-			#if read == Editor.token:
-			#	subprocess.call([self.ext, self.compiler.output_name])
 			
-			if not read:
-				break
+			if read == 'r': # review
+				self.compiler.write_contents(sys.stdout, self.globs, self.funcs, self.lines)
+				continue
+			
+			self.lines.append('\t' + read)
+			
+			if read[len(read)-1] not in [';', '}']:
+				r = 1
+				while r:
+					r = raw_input(ps2)
+					if r: self.lines.append('\t\t'+r)
+				continue;
 
-			self.lines.append('\t'+read)
 			
 	def compile(self, opt=0):
 		if not opt:
@@ -243,6 +255,7 @@ def main(argc, argv):
 	
 
 if __name__ == "__main__":
+	os.chdir(os.path.dirname(WPATH))
 	try:
 		main(len(sys.argv), sys.argv)
 	except KeyboardInterrupt as k:
