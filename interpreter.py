@@ -7,6 +7,7 @@ import sys
 import readline
 import subprocess
 import random
+import io
 from config import Config
 from config import ConfigException
 
@@ -190,21 +191,20 @@ class Editor(object):
 		self.compiler = comp
 		self.features = feat
 
-	def loop(self, opt=0):
+	def loop(self):
 		read = 1
 		ps1 = colorize(Editor.ps1color, ('%-5s' % self.ps1))
 		ps2 = colorize(Editor.ps2color, ('%-5s' % self.ps2))
 
-		if not opt:
-			# colored header
-			_f = _F.split(' ')
-			_r  = random.sample(self.color_map.keys(), len(_f))
-			for i,r in enumerate(_r):
-				_f[i] = colorize(self.color_map[r], _f[i])
-			print ' '.join(_f)
+		# colored header
+		_f = _F.split(' ')
+		_r  = random.sample(self.color_map.keys(), len(_f))
+		for i,r in enumerate(_r):
+			_f[i] = colorize(self.color_map[r], _f[i])
+		print ' '.join(_f)
 
 		# repl
-		while read and not opt:
+		while read:
 			read = raw_input(ps1)
 			
 			if not read:
@@ -223,7 +223,14 @@ class Editor(object):
 				continue;
 			
 			if read == 'r': # review
-				self.compiler.write_contents(sys.stdout, self.globs, self.funcs, self.lines)
+				highlight = subprocess.Popen(['highlight', '-S','c','-O','xterm256'], stdin=subprocess.PIPE,
+									stdout=subprocess.PIPE, bufsize=-1)
+				
+				buff = io.BytesIO()
+				self.compiler.write_contents(buff, self.globs, self.funcs, self.lines)
+				out, err = highlight.communicate(buff.getvalue())
+				print out
+
 				continue
 			
 			self.lines.append('\t' + read)
@@ -255,11 +262,14 @@ def main(argc, argv):
 		print ABOUT
 		return
 
-	tok = 0 or '-p' in sys.argv
+	tok = 0 or any(map(lambda x: x in sys.argv, ['-r', '-p']))
 
 	config = Config('config.cfg')
 	runtime = RuntimeEnvironment(config)
-	runtime.editor.loop(tok)
+
+	if not tok:
+		runtime.editor.loop()
+	
 	sys.exit(runtime.editor.compile(tok))
 	
 
