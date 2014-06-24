@@ -2,17 +2,19 @@
 # Anthony Clark
 #	Simple C/GCC evaluation loop
 #
-
 import os
 import sys
 import readline
 import subprocess
+import random
 from config import Config
 from config import ConfigException
 
 VER = 0.01
 WPATH = os.path.realpath(sys.argv[0])
 ANSI_BASE = '\001\033[%sm\002'
+
+_F="""Simple C interpreter V{} - Anthony Clark""".format(VER)
 
 ABOUT="""\
 Simple C interpreter V{} - Anthony Clark
@@ -160,8 +162,6 @@ class Editor(object):
 			'lightpurple'	:'1;35',
 			'lightcyan'		:'1;36',
 			'white'			:'1;37',
-			'None'			:'0',
-			'none'			:'0',
 	}
 	
 	def __init__(self, conf, comp, feat):
@@ -195,6 +195,15 @@ class Editor(object):
 		ps1 = colorize(Editor.ps1color, ('%-5s' % self.ps1))
 		ps2 = colorize(Editor.ps2color, ('%-5s' % self.ps2))
 
+		if not opt:
+			# colored header
+			_f = _F.split(' ')
+			_r  = random.sample(self.color_map.keys(), len(_f))
+			for i,r in enumerate(_r):
+				_f[i] = colorize(self.color_map[r], _f[i])
+			print ' '.join(_f)
+
+		# repl
 		while read and not opt:
 			read = raw_input(ps1)
 			
