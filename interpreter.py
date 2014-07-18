@@ -115,8 +115,15 @@ class Function(object):
 
 	def loop(self):
 		read = 1
+		
 		while read:
 			read = raw_input(colorize(self.color, ('%-5s' % self.ps2)))
+			
+			if read == 'u':
+				if len(self.lines):
+					del self.lines[-1]
+				continue
+
 			self.lines.append(read);
 
 
@@ -132,6 +139,12 @@ class Global(object):
 		read = 1
 		while read:
 			read = raw_input(colorize(self.color, ('%-5s' % self.ps2)))
+			
+			if read == 'u':
+				if len(self.lines):
+					del self.lines[-1]
+				continue
+
 			self.lines.append(read);
 
 
@@ -203,25 +216,42 @@ class Editor(object):
 			_f[i] = colorize(self.color_map[r], _f[i])
 		print ' '.join(_f)
 
+
+		last = None
 		# repl
 		while read:
 			read = raw_input(ps1)
 			
 			if not read:
-				break
-			
+				ret = self.compile()
+				if ret:
+					print(colorize(self.color_map['red'], "Returned: %d" % ret))
+				read = True # anything
+				continue
+
 			if read == Function.token:
 				function_ctx = Function(self.ps2)
 				function_ctx.loop()
 				self.funcs.append(function_ctx)
+				last = self.funcs
 				continue;
 			
 			if read == Global.token:
 				global_ctx = Global(self.ps2)
 				global_ctx.loop()
 				self.globs.append(global_ctx)
+				last = self.globs
 				continue;
 			
+			if read == 'h':
+				print('Help:')
+				print(' Enter C code or submit an empty prompt to compile')
+				print('\t{} - Review current file'.format(colorize(self.color_map['lightpurple'], 'r')))
+				print('\t{} - Undo Last line, func, or global'.format(colorize(self.color_map['lightgreen'], 'u')))
+				print('\t{} - Create a function'.format(colorize(self.color_map['lightblue'], 'f')))
+				print('\t{} - Create a global'.format(colorize(self.color_map['lightred'], 'g')))
+				continue
+
 			if read == 'r': # review
 				highlight = subprocess.Popen(['highlight', '-S','c','-O','xterm256'], stdin=subprocess.PIPE,
 									stdout=subprocess.PIPE, bufsize=-1)
@@ -230,23 +260,30 @@ class Editor(object):
 				self.compiler.write_contents(buff, self.globs, self.funcs, self.lines)
 				out, err = highlight.communicate(buff.getvalue())
 				print out
-
 				continue
 			
+			if read == 'u': # undo
+				if last and len(last):
+					del last[-1]
+				continue
+
 			self.lines.append('\t' + read)
-			
+			last = self.lines
+
 			if read[len(read)-1] not in [';', '}']:
 				r = 1
 				while r:
 					r = raw_input(ps2)
-					if r: self.lines.append('\t\t'+r)
+					if r: 
+						self.lines.append('\t\t'+r)
+						last = self.lines
 				continue;
 
 			
 	def compile(self, opt=0):
 		if not opt:
 			self.compiler.write_file(self.globs, self.funcs, self.lines)
-		self.compiler.compile()
+		return self.compiler.compile()
 
 
 class RuntimeEnvironment(object):
@@ -262,6 +299,7 @@ def main(argc, argv):
 		print ABOUT
 		return
 
+	ret = 0
 	tok = 0 or any(map(lambda x: x in sys.argv, ['-r', '-p']))
 
 	config = Config('config.cfg')
@@ -270,14 +308,13 @@ def main(argc, argv):
 	if not tok:
 		runtime.editor.loop()
 	
-	sys.exit(runtime.editor.compile(tok))
 	
 
 if __name__ == "__main__":
 	os.chdir(os.path.dirname(WPATH))
 	try:
 		main(len(sys.argv), sys.argv)
-	except KeyboardInterrupt as k:
+	except (KeyboardInterrupt, EOFError) as k:
 		pass
 	except ConfigException as c:
 		print 'Error:{}'.format(c)
