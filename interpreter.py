@@ -66,37 +66,8 @@ class Compiler(object):
 		self.output_name = self.config.get_option('output')
 		self.output_bin = self.config.get_option('binary')
 
-	def assemble_command(self):
-		return self.command
-
-	def write_contents(self, stream, _g, _f, _l):
-			_gl = []
-			_fl = []
-
-			for g in _g:
-				for l in g.lines:
-					_gl.append(l)
-
-			for f in _f:
-				for l in f.lines:
-					_fl.append(l)
-
-			stream.write(HEADER.format(
-				includes='\n'.join(self.includes),
-				prototypes='\n'.join([fn.create_prototype() for fn in _f]),
-				_globals='\n'.join(_gl),
-				functions='\n'.join(_fl)))
-
-			stream.write(MAIN_HEADER)
-			stream.write('\n'.join(_l))
-			stream.write(MAIN_FOOTER)
-
-	def write_file(self, _g, _f, _l):
-		with open(self.output_name, 'w+') as out:
-			self.write_contents(out, _g, _f, _l)
-
 	def compile(self):
-		_r = subprocess.call([str(tok) for tok in self.assemble_command().split(' ')])
+		_r = subprocess.call([str(tok) for tok in self.command.split(' ')])
 		if not _r: # 0 is good
 			_r = subprocess.call([self.output_bin])
 		return _r
@@ -148,11 +119,36 @@ class Global(object):
 			self.lines.append(read);
 
 
-class Features(object):
-	_section = 'features'
+class External(object):
+	_section = 'external'
 	def __init__(self, conf):
 		self.config = conf
+		self.config.section = self._section
+		self.highlight_args = conf.get_option('highlight_command').split(' ')
+		self.cppcheck_args  = conf.get_option('cppcheck_command').split(' ')
 
+	def open_command(self, args):
+		command = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+				bufsize=-1)
+		return (command, io.BytesIO())
+
+	def run_highlight(self):
+		highlight, output = self.open_command(self.highlight_args)
+
+		globalRuntime.write_contents(output, 
+				globalRuntime.editor.globs,
+				globalRuntime.editor.funcs,
+				globalRuntime.editor.lines)
+
+		out, err = highlight.communicate(output.getvalue())
+		print out
+
+	def run_cppcheck(self, file):
+		self.cppcheck_args[-1] = self.cppcheck_args[-1].format(file)
+		cppcheck, output = self.open_command(self.cppcheck_args)
+		out, err = cppcheck.communicate(output.getvalue())
+		print out
+	
 
 class Editor(object):
 	_section = 'editor'
@@ -178,7 +174,7 @@ class Editor(object):
 			'white'			:'1;37',
 	}
 	
-	def __init__(self, conf, comp, feat):
+	def __init__(self, conf):
 		self.lines = []
 		self.funcs = []
 		self.globs = []
@@ -192,17 +188,10 @@ class Editor(object):
 		self.fncol  = self.color_map.get(str(self.config.get_option('fn_color')))
 		self.glcol  = self.color_map.get(str(self.config.get_option('gl_color')))
 
-		self.ext = self.config.get_option('external_editor')
-		if self.ext[0] == '$':
-			self.ext = os.environ.get(self.ext[1:], 'nano')
-
 		Editor.ps1color = self.regcol
 		Editor.ps2color = self.contcol
 		Function.color = self.fncol
 		Global.color = self.glcol
-
-		self.compiler = comp
-		self.features = feat
 
 	def loop(self):
 		read = 1
@@ -223,7 +212,7 @@ class Editor(object):
 			read = raw_input(ps1)
 			
 			if not read:
-				ret = self.compile()
+				ret = globalRuntime.compile()
 				if ret:
 					print(colorize(self.color_map['red'], "Returned: %d" % ret))
 				read = True # anything
@@ -253,15 +242,13 @@ class Editor(object):
 				continue
 
 			if read == 'r': # review
-				highlight = subprocess.Popen(['highlight', '-S','c','-O','xterm256'], stdin=subprocess.PIPE,
-									stdout=subprocess.PIPE, bufsize=-1)
-				
-				buff = io.BytesIO()
-				self.compiler.write_contents(buff, self.globs, self.funcs, self.lines)
-				out, err = highlight.communicate(buff.getvalue())
-				print out
+				globalRuntime.external.run_highlight()
 				continue
 			
+			if read == 'c': # check
+				globalRuntime.external.run_cppcheck(globalRuntime.compiler.output_name)
+				continue
+
 			if read == 'u': # undo
 				if last and len(last):
 					del last[-1]
@@ -279,11 +266,6 @@ class Editor(object):
 						last = self.lines
 				continue;
 
-			
-	def compile(self, opt=0):
-		if not opt:
-			self.compiler.write_file(self.globs, self.funcs, self.lines)
-		return self.compiler.compile()
 
 
 class RuntimeEnvironment(object):
@@ -291,10 +273,54 @@ class RuntimeEnvironment(object):
 	def __init__(self, conf):
 		self.config = conf
 		self.compiler = Compiler(self.config)
-		self.features = Features(self.config)
-		self.editor = Editor(self.config, self.compiler, self.features)
+		self.external = External(self.config)
+		self.editor = Editor(self.config)
+
+	
+	def run_highlight():
+		self.external.run_highlight(self)
+
+	
+	def write_contents(self, stream, _g, _f, _l):
+			_gl = []
+			_fl = []
+
+			for g in _g:
+				for l in g.lines:
+					_gl.append(l)
+
+			for f in _f:
+				for l in f.lines:
+					_fl.append(l)
+
+			stream.write(HEADER.format(
+				includes='\n'.join(self.compiler.includes),
+				prototypes='\n'.join([fn.create_prototype() for fn in _f]),
+				_globals='\n'.join(_gl),
+				functions='\n'.join(_fl)))
+
+			stream.write(MAIN_HEADER)
+			stream.write('\n'.join(_l))
+			stream.write(MAIN_FOOTER)
+
+
+	def write_cpp_file(self, _g, _f, _l):
+		with open(self.compiler.output_name, 'w+') as out:
+			self.write_contents(out, _g, _f, _l)
+
+
+	def compile(self, opt=0):
+		if not opt:
+			self.write_cpp_file(self.editor.globs, self.editor.funcs, self.editor.lines)
+		return self.compiler.compile()
+
+
+globalRuntime = None
+
 
 def main(argc, argv):
+	global globalRuntime
+
 	if any(arg in ['-h', '--help'] for arg in sys.argv[1:]):
 		print ABOUT
 		return
@@ -303,11 +329,11 @@ def main(argc, argv):
 	tok = 0 or any(map(lambda x: x in sys.argv, ['-r', '-p']))
 
 	config = Config('config.cfg')
-	runtime = RuntimeEnvironment(config)
+	globalRuntime = RuntimeEnvironment(config)
 
 	if not tok:
-		runtime.editor.loop()
-	
+		globalRuntime.editor.loop()
+		globalRuntime.compile()
 	
 
 if __name__ == "__main__":
