@@ -11,25 +11,26 @@ import io
 from config import Config
 from config import ConfigException
 
-VER = 0.01
+VER = 0.02
 WPATH = os.path.realpath(sys.argv[0])
 ANSI_BASE = '\001\033[%sm\002'
 
-_F="""Simple C interpreter V{} - Anthony Clark""".format(VER)
+_F="""Simple C/C++ REPL V{} - Anthony Clark""".format(VER)
 
 ABOUT="""\
-Simple C interpreter V{} - Anthony Clark
+{}
 Options:
 	-h  This message
-	-p  To compile and run previous file
-""".format(VER)
+	-p  Print the last file
+	-r  To compile and run previous file
+""".format(_F, VER)
 
 HEADER="""\
 {includes}
 
-{prototypes}
-
 {_globals}
+
+{prototypes}
 
 {functions}
 
@@ -132,13 +133,18 @@ class External(object):
 				bufsize=-1)
 		return (command, io.BytesIO())
 
-	def run_highlight(self):
+	def run_highlight(self, old=0):
 		highlight, output = self.open_command(self.highlight_args)
 
-		globalRuntime.write_contents(output, 
-				globalRuntime.editor.globs,
-				globalRuntime.editor.funcs,
-				globalRuntime.editor.lines)
+		if not old:
+			globalRuntime.write_contents(output, 
+					globalRuntime.editor.globs,
+					globalRuntime.editor.funcs,
+					globalRuntime.editor.lines)
+		else:
+			with open(globalRuntime.compiler.output_name, 'r') as inf:
+				for line in inf.readlines():
+					output.write(line)
 
 		out, err = highlight.communicate(output.getvalue())
 		print out
@@ -234,11 +240,11 @@ class Editor(object):
 			
 			if read == 'h':
 				print('Help:')
-				print(' Enter C code or submit an empty prompt to compile')
-				print('\t{} - Review current file'.format(colorize(self.color_map['lightpurple'], 'r')))
+				print(' Enter C/C++ code or submit an empty prompt to compile')
+				print('\t{} - Review current file'.format(colorize(self.color_map['lightred'], 'r')))
 				print('\t{} - Undo Last line, func, or global'.format(colorize(self.color_map['lightgreen'], 'u')))
-				print('\t{} - Create a function'.format(colorize(self.color_map['lightblue'], 'f')))
-				print('\t{} - Create a global'.format(colorize(self.color_map['lightred'], 'g')))
+				print('\t{} - Create a function'.format(colorize(self.color_map['yellow'], 'f')))
+				print('\t{} - Create a global'.format(colorize(self.color_map['lightpurple'], 'g')))
 				continue
 
 			if read == 'r': # review
@@ -254,7 +260,10 @@ class Editor(object):
 					del last[-1]
 				continue
 
-			self.lines.append('\t' + read)
+			if read in [';', '}', '{', '[', ']']:
+				self.lines.append(read)
+			else:
+				self.lines.append('\t' + read)
 			last = self.lines
 
 			if read[len(read)-1] not in [';', '}']:
@@ -334,7 +343,10 @@ def main(argc, argv):
 	if not tok:
 		globalRuntime.editor.loop()
 		globalRuntime.compile()
-	
+	if tok and '-p' in sys.argv:
+		globalRuntime.external.run_highlight(True)
+	if tok and '-r' in sys.argv:
+		globalRuntime.compile(True)
 
 if __name__ == "__main__":
 	os.chdir(os.path.dirname(WPATH))
