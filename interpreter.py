@@ -140,7 +140,8 @@ class External(object):
 			globalRuntime.write_contents(output, 
 					globalRuntime.editor.globs,
 					globalRuntime.editor.funcs,
-					globalRuntime.editor.lines)
+					globalRuntime.editor.lines,
+					globalRuntime.editor.incs)
 		else:
 			with open(globalRuntime.compiler.output_name, 'r') as inf:
 				for line in inf.readlines():
@@ -184,6 +185,7 @@ class Editor(object):
 		self.lines = []
 		self.funcs = []
 		self.globs = []
+		self.incs  = []
 
 		self.config = conf
 		self.config.section = self._section
@@ -193,6 +195,7 @@ class Editor(object):
 		self.contcol = self.color_map.get(str(self.config.get_option('cont_color')))
 		self.fncol  = self.color_map.get(str(self.config.get_option('fn_color')))
 		self.glcol  = self.color_map.get(str(self.config.get_option('gl_color')))
+		self.inccol = self.fncol;
 
 		Editor.ps1color = self.regcol
 		Editor.ps2color = self.contcol
@@ -245,6 +248,7 @@ class Editor(object):
 				print('\t{} - Undo Last line, func, or global'.format(colorize(self.color_map['lightgreen'], 'u')))
 				print('\t{} - Create a function'.format(colorize(self.color_map['yellow'], 'f')))
 				print('\t{} - Create a global'.format(colorize(self.color_map['lightpurple'], 'g')))
+				print('\t{} - Run CppCheck'.format(colorize(self.color_map['lightblue'], 'c')))
 				continue
 
 			if read == 'r': # review
@@ -259,6 +263,11 @@ class Editor(object):
 				if last and len(last):
 					del last[-1]
 				continue
+
+			if read.startswith('#include'):
+				self.incs.append(read)
+				last = self.incs
+				continue;
 
 			if read in [';', '}', '{', '[', ']']:
 				self.lines.append(read)
@@ -290,7 +299,7 @@ class RuntimeEnvironment(object):
 		self.external.run_highlight(self)
 
 	
-	def write_contents(self, stream, _g, _f, _l):
+	def write_contents(self, stream, _g, _f, _l, _i):
 			_gl = []
 			_fl = []
 
@@ -303,7 +312,7 @@ class RuntimeEnvironment(object):
 					_fl.append(l)
 
 			stream.write(HEADER.format(
-				includes='\n'.join(self.compiler.includes),
+				includes='\n'.join(self.compiler.includes + _i),
 				prototypes='\n'.join([fn.create_prototype() for fn in _f]),
 				_globals='\n'.join(_gl),
 				functions='\n'.join(_fl)))
@@ -313,14 +322,14 @@ class RuntimeEnvironment(object):
 			stream.write(MAIN_FOOTER)
 
 
-	def write_cpp_file(self, _g, _f, _l):
+	def write_cpp_file(self, _g, _f, _l, _i):
 		with open(self.compiler.output_name, 'w+') as out:
-			self.write_contents(out, _g, _f, _l)
+			self.write_contents(out, _g, _f, _l, _i)
 
 
 	def compile(self, opt=0):
 		if not opt:
-			self.write_cpp_file(self.editor.globs, self.editor.funcs, self.editor.lines)
+			self.write_cpp_file(self.editor.globs, self.editor.funcs, self.editor.lines, self.editor.incs)
 		return self.compiler.compile()
 
 
