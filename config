@@ -1,10 +1,10 @@
 [compiler]
-command  = clang++ -ggdb3 -O0 %(warnings)s --std=%(std)s %(output)s -o %(binary)s %(cppflags)s %(libs)s
+command  = clang++ -ggdb3 -pipe -O0 %(warnings)s --std=%(std)s %(output)s -o %(binary)s %(cppflags)s %(libs)s
 std      = c++11
 warnings = -Wall
 libs     = -lpthread
 cppflags =
-includes = cstdio,cstdlib,unistd.h,ctime,cerrno,iostream,algorithm,thread,chrono,sys/socket.h,mutex,condition_variable,thread
+includes = cstdio,cstdlib,unistd.h,ctime,cerrno,iostream,algorithm,thread,chrono,sys/socket.h,mutex,condition_variable,thread, unordered_map, map, boost/any.hpp
 output   = /tmp/ac_ci.cpp
 binary   = /tmp/ac_ci.o
 
@@ -15,7 +15,6 @@ reg_color  = lightblue
 cont_color = darkgray
 fn_color   = yellow
 gl_color   = lightpurple
-
 
 [external]
 highlight_command = highlight -S cpp -O xterm256 -n -F gnu --style=solarized-dark

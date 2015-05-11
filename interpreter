@@ -1,17 +1,27 @@
 #!/usr/bin/env python2
 # Anthony Clark
-#	Simple C/GCC evaluation loop
+# Toy C++ editor with REPL for prototyping simple things
+# 
+# Doesnt support:
+#	- reloading previous file
+#   - compiling without writing to FS
 #
+# Does support:
+#   - undo 
+#   - parsing of #include
+#  
+
 import os
 import sys
 import readline
 import subprocess
 import random
 import io
+import signal
 from config import Config
 from config import ConfigException
 
-VER = 0.02
+VER = 0.07
 WPATH = os.path.realpath(sys.argv[0])
 ANSI_BASE = '\001\033[%sm\002'
 
@@ -155,6 +165,12 @@ class External(object):
 		cppcheck, output = self.open_command(self.cppcheck_args)
 		out, err = cppcheck.communicate(output.getvalue())
 		print out
+
+	def run_error(self, code):
+		errno_proc, output = self.open_command(['errno', str(code)])
+		out, err = errno_proc.communicate(output.getvalue())
+		return out
+
 	
 
 class Editor(object):
@@ -223,7 +239,7 @@ class Editor(object):
 			if not read:
 				ret = globalRuntime.compile()
 				if ret:
-					print(colorize(self.color_map['red'], "Returned: %d" % ret))
+					print(colorize(self.color_map['red'], "Returned (%d): %s" % (ret, globalRuntime.external.run_error(ret))))
 				read = True # anything
 				continue
 
@@ -285,7 +301,6 @@ class Editor(object):
 				continue;
 
 
-
 class RuntimeEnvironment(object):
 	# Runtime Env init
 	def __init__(self, conf):
@@ -334,10 +349,21 @@ class RuntimeEnvironment(object):
 
 
 globalRuntime = None
+quits = 0
+
+def sighandler(signal, f):
+	global quits
+
+	print "are you sure?"
+	quits =+ 1
+
+	if quits >= 2:
+		sys.exit(0)
 
 
 def main(argc, argv):
 	global globalRuntime
+	quits = 0
 
 	if any(arg in ['-h', '--help'] for arg in sys.argv[1:]):
 		print ABOUT
@@ -346,23 +372,29 @@ def main(argc, argv):
 	ret = 0
 	tok = 0 or any(map(lambda x: x in sys.argv, ['-r', '-p']))
 
-	config = Config('config.cfg')
-	globalRuntime = RuntimeEnvironment(config)
+	config = Config('config')
+	globalRuntime = RuntimeEnvironment(config	
 
 	if not tok:
-		globalRuntime.editor.loop()
+		try:
+			globalRuntime.editor.loop()
+		except KeyboardInterrupt as k:
+			pass
+		
 		globalRuntime.compile()
+
 	if tok and '-p' in sys.argv:
 		globalRuntime.external.run_highlight(True)
 	if tok and '-r' in sys.argv:
 		globalRuntime.compile(True)
 
 if __name__ == "__main__":
+
+	signal.signal(signal.SIGINT, sighandler)
+
 	os.chdir(os.path.dirname(WPATH))
 	try:
 		main(len(sys.argv), sys.argv)
-	except (KeyboardInterrupt, EOFError) as k:
-		pass
 	except ConfigException as c:
 		print 'Error:{}'.format(c)
 		sys.exit(1)
