@@ -22,7 +22,7 @@ import signal
 from config import Config
 from config import ConfigException
 
-VER = 0.16
+VER = 0.17
 WPATH = os.path.realpath(sys.argv[0])
 ANSI_BASE = '\001\033[%sm\002'
 
