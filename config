@@ -7,8 +7,8 @@ warnings = -Wall
 libs     = -lpthread
 cppflags =
 includes = cstdio,cstdlib,unistd.h,ctime,cerrno,cassert,iostream,algorithm,thread,chrono,sys/socket.h,mutex,condition_variable,thread,unordered_map,map,vector,boost/any.hpp, regex
-output   = /tmp/ac_ci.cpp
-binary   = /tmp/ac_ci.o
+output   = /tmp/cppcli.cpp
+binary   = /tmp/cppcli.o
 
 [editor]
 PS1        = >>>>
